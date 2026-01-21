@@ -71,7 +71,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	defer device.peers.Unlock()
 
 	// check if over limit
-	if len(device.peers.keyMap) >= MaxPeers {
+	if device.peers.Len() >= MaxPeers {
 		return nil, errors.New("too many peers")
 	}
 
@@ -85,7 +85,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.queue.staged = make(chan *QueueOutboundElementsContainer, QueueStagedSize)
 
 	// map public key
-	_, ok := device.peers.keyMap[pk]
+	_, ok := device.peers.Get(pk)
 	if ok {
 		return nil, errors.New("adding existing peer")
 	}
@@ -108,7 +108,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.timersInit()
 
 	// add
-	device.peers.keyMap[pk] = peer
+	device.peers.Set(pk, peer)
 
 	return peer, nil
 }

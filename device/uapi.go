@@ -97,7 +97,7 @@ func (device *Device) IpcGetOperation(w io.Writer) error {
 			sendf("fwmark=%d", device.net.fwmark)
 		}
 
-		for _, peer := range device.peers.keyMap {
+		for _, peer := range device.peers.All() {
 			// Serialize peer state.
 			peer.handshake.mutex.RLock()
 			keyf("public_key", (*[32]byte)(&peer.handshake.remoteStatic))

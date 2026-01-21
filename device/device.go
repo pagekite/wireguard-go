@@ -53,10 +53,8 @@ type Device struct {
 		publicKey  NoisePublicKey
 	}
 
-	peers struct {
-		sync.RWMutex // protects keyMap
-		keyMap       map[NoisePublicKey]*Peer
-	}
+	makePeers func() Peers
+	peers     Peers
 
 	rate struct {
 		underLoadUntil atomic.Int64
@@ -132,7 +130,7 @@ func removePeerLocked(device *Device, peer *Peer, key NoisePublicKey) {
 	peer.Stop()
 
 	// remove from peer map
-	delete(device.peers.keyMap, key)
+	device.peers.Del(key)
 }
 
 // changeState attempts to change the device state to match want.
@@ -180,7 +178,7 @@ func (device *Device) upLocked() error {
 	defer device.ipcMutex.Unlock()
 
 	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
+	for _, peer := range device.peers.All() {
 		peer.Start()
 		if peer.persistentKeepaliveInterval.Load() > 0 {
 			peer.SendKeepalive()
@@ -199,7 +197,7 @@ func (device *Device) downLocked() error {
 	}
 
 	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
+	for _, peer := range device.peers.All() {
 		peer.Stop()
 	}
 	device.peers.RUnlock()
@@ -239,8 +237,8 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 	device.peers.Lock()
 	defer device.peers.Unlock()
 
-	lockedPeers := make([]*Peer, 0, len(device.peers.keyMap))
-	for _, peer := range device.peers.keyMap {
+	lockedPeers := make([]*Peer, 0, device.peers.Len())
+	for _, peer := range device.peers.All() {
 		peer.handshake.mutex.RLock()
 		lockedPeers = append(lockedPeers, peer)
 	}
@@ -248,7 +246,7 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 	// remove peers with matching public keys
 
 	publicKey := sk.publicKey()
-	for key, peer := range device.peers.keyMap {
+	for key, peer := range device.peers.All() {
 		if peer.handshake.remoteStatic.Equals(publicKey) {
 			peer.handshake.mutex.RUnlock()
 			removePeerLocked(device, peer, key)
@@ -264,8 +262,8 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 
 	// do static-static DH pre-computations
 
-	expiredPeers := make([]*Peer, 0, len(device.peers.keyMap))
-	for _, peer := range device.peers.keyMap {
+	expiredPeers := make([]*Peer, 0, device.peers.Len())
+	for _, peer := range device.peers.All() {
 		handshake := &peer.handshake
 		handshake.precomputedStaticStatic, _ = device.staticIdentity.privateKey.sharedSecret(handshake.remoteStatic)
 		expiredPeers = append(expiredPeers, peer)
@@ -282,6 +280,10 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 }
 
 func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
+	return FullNewDevice(tunDevice, bind, MakeDefaultPeers, MakeDefaultAllowedIPs, logger)
+}
+
+func FullNewDevice(tunDevice tun.Device, bind conn.Bind, makePeers func() Peers, makeAllowedIPs func() AllowedIPs, logger *Logger) *Device {
 	device := new(Device)
 	device.state.state.Store(uint32(deviceStateDown))
 	device.closed = make(chan struct{})
@@ -294,7 +296,9 @@ func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
 		mtu = DefaultMTU
 	}
 	device.tun.mtu.Store(int32(mtu))
-	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
+	device.makePeers = makePeers
+	device.peers = device.makePeers()
+	device.allowedips = makeAllowedIPs()
 	device.rate.limiter.Init()
 	device.indexTable.Init()
 
@@ -342,7 +346,8 @@ func (device *Device) LookupPeer(pk NoisePublicKey) *Peer {
 	device.peers.RLock()
 	defer device.peers.RUnlock()
 
-	return device.peers.keyMap[pk]
+	peer, _ := device.peers.Get(pk)
+	return peer
 }
 
 func (device *Device) RemovePeer(key NoisePublicKey) {
@@ -350,7 +355,7 @@ func (device *Device) RemovePeer(key NoisePublicKey) {
 	defer device.peers.Unlock()
 	// stop peer and remove from routing
 
-	peer, ok := device.peers.keyMap[key]
+	peer, ok := device.peers.Get(key)
 	if ok {
 		removePeerLocked(device, peer, key)
 	}
@@ -360,11 +365,11 @@ func (device *Device) RemoveAllPeers() {
 	device.peers.Lock()
 	defer device.peers.Unlock()
 
-	for key, peer := range device.peers.keyMap {
+	for key, peer := range device.peers.All() {
 		removePeerLocked(device, peer, key)
 	}
 
-	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
+	device.peers = device.makePeers()
 }
 
 func (device *Device) Close() {
@@ -409,7 +414,7 @@ func (device *Device) SendKeepalivesToPeersWithCurrentKeypair() {
 	}
 
 	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
+	for _, peer := range device.peers.All() {
 		peer.keypairs.RLock()
 		sendKeepalive := peer.keypairs.current != nil && !peer.keypairs.current.created.Add(RejectAfterTime).Before(time.Now())
 		peer.keypairs.RUnlock()
@@ -460,7 +465,7 @@ func (device *Device) BindSetMark(mark uint32) error {
 
 	// clear cached source addresses
 	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
+	for _, peer := range device.peers.All() {
 		peer.markEndpointSrcForClearing()
 	}
 	device.peers.RUnlock()
@@ -510,7 +515,7 @@ func (device *Device) BindUpdate() error {
 
 	// clear cached source addresses
 	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
+	for _, peer := range device.peers.All() {
 		peer.markEndpointSrcForClearing()
 	}
 	device.peers.RUnlock()

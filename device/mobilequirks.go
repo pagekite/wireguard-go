@@ -10,7 +10,7 @@ package device
 func (device *Device) DisableSomeRoamingForBrokenMobileSemantics() {
 	device.net.brokenRoaming = true
 	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
+	for _, peer := range device.peers.All() {
 		peer.endpoint.Lock()
 		peer.endpoint.disableRoaming = peer.endpoint.val != nil
 		peer.endpoint.Unlock()

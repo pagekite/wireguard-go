@@ -133,7 +133,7 @@ func (device *Device) routineRouteListener(_ conn.Bind, netlinkSock int, netlink
 				go func() {
 					device.peers.RLock()
 					i := uint32(1)
-					for _, peer := range device.peers.keyMap {
+					for _, peer := range device.peers.All() {
 						peer.endpoint.Lock()
 						if peer.endpoint.val == nil {
 							peer.endpoint.Unlock()

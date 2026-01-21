@@ -204,13 +204,25 @@ func (node *trieEntry) lookup(ip []byte) *Peer {
 	return found
 }
 
-type AllowedIPs struct {
+type AllowedIPs interface {
+	EntriesForPeer(*Peer, func(prefix netip.Prefix) bool)
+	Remove(netip.Prefix, *Peer)
+	RemoveByPeer(peer *Peer)
+	Insert(netip.Prefix, *Peer)
+	Lookup([]byte) *Peer
+}
+
+type DefaultAllowedIPs struct {
 	IPv4  *trieEntry
 	IPv6  *trieEntry
 	mutex sync.RWMutex
 }
 
-func (table *AllowedIPs) EntriesForPeer(peer *Peer, cb func(prefix netip.Prefix) bool) {
+func MakeDefaultAllowedIPs() AllowedIPs {
+	return &DefaultAllowedIPs{}
+}
+
+func (table *DefaultAllowedIPs) EntriesForPeer(peer *Peer, cb func(prefix netip.Prefix) bool) {
 	table.mutex.RLock()
 	defer table.mutex.RUnlock()
 
@@ -256,7 +268,7 @@ func (node *trieEntry) remove() {
 	parent.zeroizePointers()
 }
 
-func (table *AllowedIPs) Remove(prefix netip.Prefix, peer *Peer) {
+func (table *DefaultAllowedIPs) Remove(prefix netip.Prefix, peer *Peer) {
 	table.mutex.Lock()
 	defer table.mutex.Unlock()
 	var node *trieEntry
@@ -277,7 +289,7 @@ func (table *AllowedIPs) Remove(prefix netip.Prefix, peer *Peer) {
 	node.remove()
 }
 
-func (table *AllowedIPs) RemoveByPeer(peer *Peer) {
+func (table *DefaultAllowedIPs) RemoveByPeer(peer *Peer) {
 	table.mutex.Lock()
 	defer table.mutex.Unlock()
 
@@ -288,7 +300,7 @@ func (table *AllowedIPs) RemoveByPeer(peer *Peer) {
 	}
 }
 
-func (table *AllowedIPs) Insert(prefix netip.Prefix, peer *Peer) {
+func (table *DefaultAllowedIPs) Insert(prefix netip.Prefix, peer *Peer) {
 	table.mutex.Lock()
 	defer table.mutex.Unlock()
 
@@ -303,7 +315,7 @@ func (table *AllowedIPs) Insert(prefix netip.Prefix, peer *Peer) {
 	}
 }
 
-func (table *AllowedIPs) Lookup(ip []byte) *Peer {
+func (table *DefaultAllowedIPs) Lookup(ip []byte) *Peer {
 	table.mutex.RLock()
 	defer table.mutex.RUnlock()
 	switch len(ip) {

@@ -211,7 +211,7 @@ func TestUpDown(t *testing.T) {
 	for n := 0; n < otrials; n++ {
 		pair := genTestPair(t, false)
 		for i := range pair {
-			for k := range pair[i].dev.peers.keyMap {
+			for k, _ := range pair[i].dev.peers.All() {
 				pair[i].dev.IpcSet(fmt.Sprintf("public_key=%s\npersistent_keepalive_interval=1\n", hex.EncodeToString(k[:])))
 			}
 		}
@@ -279,7 +279,7 @@ func TestConcurrencySafety(t *testing.T) {
 	// Change persistent_keepalive_interval concurrently with tunnel use.
 	t.Run("persistentKeepaliveInterval", func(t *testing.T) {
 		var pub NoisePublicKey
-		for key := range pair[0].dev.peers.keyMap {
+		for key, _ := range pair[0].dev.peers.All() {
 			pub = key
 			break
 		}

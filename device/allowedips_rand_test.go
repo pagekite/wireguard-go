@@ -81,7 +81,7 @@ func (r SlowRouter) RemoveByPeer(peer *Peer) SlowRouter {
 func TestTrieRandom(t *testing.T) {
 	var slow4, slow6 SlowRouter
 	var peers []*Peer
-	var allowedIPs AllowedIPs
+	var allowedIPs DefaultAllowedIPs
 
 	rng := rand.New(rand.NewSource(1))
 

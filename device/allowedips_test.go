@@ -95,7 +95,7 @@ func TestTrieIPv4(t *testing.T) {
 	g := &Peer{}
 	h := &Peer{}
 
-	var allowedIPs AllowedIPs
+	var allowedIPs DefaultAllowedIPs
 
 	insert := func(peer *Peer, a, b, c, d byte, cidr uint8) {
 		allowedIPs.Insert(netip.PrefixFrom(netip.AddrFrom4([4]byte{a, b, c, d}), int(cidr)), peer)
@@ -210,7 +210,7 @@ func TestTrieIPv6(t *testing.T) {
 	g := &Peer{}
 	h := &Peer{}
 
-	var allowedIPs AllowedIPs
+	var allowedIPs DefaultAllowedIPs
 
 	expand := func(a uint32) []byte {
 		var out [4]byte
