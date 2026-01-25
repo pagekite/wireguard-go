@@ -64,6 +64,7 @@ type Device struct {
 	allowedips    AllowedIPs
 	indexTable    IndexTable
 	cookieChecker CookieChecker
+	filter        PacketFilter
 
 	pool struct {
 		inboundElementsContainer  *WaitPool
@@ -280,10 +281,13 @@ func (device *Device) SetPrivateKey(sk NoisePrivateKey) error {
 }
 
 func NewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger) *Device {
-	return FullNewDevice(tunDevice, bind, MakeDefaultPeers, MakeDefaultAllowedIPs, logger)
+	peers := MakeDefaultPeers()
+	allowedips := MakeDefaultAllowedIPs()
+	device := FullNewDevice(tunDevice, bind, logger, peers, allowedips, nil)
+	return device
 }
 
-func FullNewDevice(tunDevice tun.Device, bind conn.Bind, makePeers func() Peers, makeAllowedIPs func() AllowedIPs, logger *Logger) *Device {
+func FullNewDevice(tunDevice tun.Device, bind conn.Bind, logger *Logger, peers Peers, allowedips AllowedIPs, packetFilter PacketFilter) *Device {
 	device := new(Device)
 	device.state.state.Store(uint32(deviceStateDown))
 	device.closed = make(chan struct{})
@@ -296,9 +300,9 @@ func FullNewDevice(tunDevice tun.Device, bind conn.Bind, makePeers func() Peers,
 		mtu = DefaultMTU
 	}
 	device.tun.mtu.Store(int32(mtu))
-	device.makePeers = makePeers
-	device.peers = device.makePeers()
-	device.allowedips = makeAllowedIPs()
+	device.filter = packetFilter
+	device.peers = peers
+	device.allowedips = allowedips
 	device.rate.limiter.Init()
 	device.indexTable.Init()
 

@@ -240,13 +240,24 @@ func (device *Device) RoutineReadFromTUN() {
 	for {
 		// read packets
 		count, readErr = device.tun.device.Read(bufs, sizes, offset)
+		nowms := time.Now().UnixMilli()
+
 		for i := 0; i < count; i++ {
 			if sizes[i] < 1 {
 				continue
 			}
 
+			packet := bufs[i][offset : offset+sizes[i]]
 			elem := elems[i]
-			elem.packet = bufs[i][offset : offset+sizes[i]]
+			elem.packet = packet
+
+			if device.filter != nil {
+				fPacket := device.filter.FilterFromTun(packet, nowms)
+				if fPacket == nil {
+					continue // dropping the packet
+				}
+				elem.packet = fPacket
+			}
 
 			// lookup peer
 			var peer *Peer
@@ -272,6 +283,7 @@ func (device *Device) RoutineReadFromTUN() {
 			if peer == nil {
 				continue
 			}
+
 			elemsForPeer, ok := elemsByPeer[peer]
 			if !ok {
 				elemsForPeer = device.GetOutboundElementsContainer()

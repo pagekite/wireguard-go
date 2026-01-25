@@ -444,6 +444,7 @@ func (peer *Peer) RoutineSequentialReceiver(maxBatchSize int) {
 		validTailPacket := -1
 		dataPacketReceived := false
 		rxBytesLen := uint64(0)
+		nowms := time.Now().UnixMilli()
 		for i, elem := range elemsContainer.elems {
 			if elem.packet == nil {
 				// decryption failed
@@ -507,6 +508,20 @@ func (peer *Peer) RoutineSequentialReceiver(maxBatchSize int) {
 				continue
 			}
 
+			if device.filter != nil {
+				fPacket := device.filter.FilterToTun(elem.packet, peer, nowms)
+				if fPacket == nil {
+					continue // dropped the packet
+				}
+				if len(fPacket) > len(elem.packet) {
+					device.log.Verbosef("Filtering made packet grow, dropping from %v", peer)
+					continue
+				} else {
+					copy(elem.buffer[MessageTransportOffsetContent:], fPacket)
+					elem.packet = elem.buffer[MessageTransportOffsetContent : MessageTransportOffsetContent+len(fPacket)]
+				}
+			}
+
 			bufs = append(bufs, elem.buffer[:MessageTransportOffsetContent+len(elem.packet)])
 		}
 
@@ -520,6 +535,7 @@ func (peer *Peer) RoutineSequentialReceiver(maxBatchSize int) {
 		if dataPacketReceived {
 			peer.timersDataReceived()
 		}
+
 		if len(bufs) > 0 {
 			_, err := device.tun.device.Write(bufs, MessageTransportOffsetContent)
 			if err != nil && !device.isClosed() {
@@ -533,4 +549,11 @@ func (peer *Peer) RoutineSequentialReceiver(maxBatchSize int) {
 		bufs = bufs[:0]
 		device.PutInboundElementsContainer(elemsContainer)
 	}
+}
+
+func padForOffset(packet []byte) []byte {
+	size := MessageTransportOffsetContent + len(packet)
+	buf := make([]byte, size)
+	copy(buf[MessageTransportOffsetContent:size], packet)
+	return buf
 }

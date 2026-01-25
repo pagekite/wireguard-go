@@ -296,5 +296,5 @@ func (peer *Peer) markEndpointSrcForClearing() {
 }
 
 func (peer *Peer) IsIdle() bool {
-        return (peer.timers.handshakeAttempts.Load() > MaxTimerHandshakes)
+	return (peer.timers.handshakeAttempts.Load() > MaxTimerHandshakes)
 }
