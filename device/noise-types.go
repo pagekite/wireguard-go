@@ -7,6 +7,7 @@ package device
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 )
@@ -26,6 +27,9 @@ type (
 
 func loadExactHex(dst []byte, src string) error {
 	slice, err := hex.DecodeString(src)
+	if err != nil && len(src) == 44 {
+		slice, err = base64.StdEncoding.DecodeString(src)
+	}
 	if err != nil {
 		return err
 	}
