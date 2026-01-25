@@ -237,16 +237,38 @@ func (device *Device) RoutineReadFromTUN() {
 		}
 	}()
 
+	skippedRead := false
+	pf := device.Filter
 	for {
 		// read packets
-		count, readErr = device.tun.device.Read(bufs, sizes, offset)
+		if len(device.extraPackets) > batchSize && !skippedRead {
+			count = 0
+			skippedRead = true // Prevent a busy-loop
+		} else {
+			count, readErr = device.tun.device.Read(bufs, sizes, offset)
+			skippedRead = false
+		}
+		if count < batchSize && pf != nil {
+			device.processQeueudExtraPackets(pf, batchSize)
+		}
+		nowms := time.Now().UnixMilli()
+
 		for i := 0; i < count; i++ {
 			if sizes[i] < 1 {
 				continue
 			}
 
+			packet := bufs[i][offset : offset+sizes[i]]
 			elem := elems[i]
-			elem.packet = bufs[i][offset : offset+sizes[i]]
+			elem.packet = packet
+
+			if pf != nil {
+				fPacket := pf.FilterFromTun(packet, nowms)
+				if fPacket == nil {
+					continue // pf.Filter dropped the packet
+				}
+				elem.packet = fPacket
+			}
 
 			// lookup peer
 			var peer *Peer
@@ -272,6 +294,7 @@ func (device *Device) RoutineReadFromTUN() {
 			if peer == nil {
 				continue
 			}
+
 			elemsForPeer, ok := elemsByPeer[peer]
 			if !ok {
 				elemsForPeer = device.GetOutboundElementsContainer()
@@ -280,6 +303,11 @@ func (device *Device) RoutineReadFromTUN() {
 			elemsForPeer.elems = append(elemsForPeer.elems, elem)
 			elems[i] = device.NewOutboundElement()
 			bufs[i] = elems[i].buffer[:]
+		}
+
+		// This may add more packets to our elemsByPeer map
+		if pf != nil {
+			device.processExtraPackets(pf, elemsByPeer, batchSize)
 		}
 
 		for peer, elemsForPeer := range elemsByPeer {
