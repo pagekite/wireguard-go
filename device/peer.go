@@ -294,3 +294,7 @@ func (peer *Peer) markEndpointSrcForClearing() {
 	}
 	peer.endpoint.clearSrcOnTx = true
 }
+
+func (peer *Peer) IsIdle() bool {
+        return (peer.timers.handshakeAttempts.Load() > MaxTimerHandshakes)
+}
